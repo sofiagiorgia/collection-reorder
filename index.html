@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>N21 — Riordino Collection</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      background: #f5f5f5;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .card {
+      background: #fff;
+      border-radius: 4px;
+      padding: 48px 40px;
+      width: 360px;
+      text-align: center;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+    }
+    h1 {
+      font-size: 13px;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: #111;
+      margin-bottom: 8px;
+    }
+    p {
+      font-size: 13px;
+      color: #888;
+      margin-bottom: 32px;
+      line-height: 1.5;
+    }
+    button {
+      width: 100%;
+      padding: 14px;
+      background: #111;
+      color: #fff;
+      border: none;
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      cursor: pointer;
+      border-radius: 2px;
+      transition: background 0.2s;
+    }
+    button:hover:not(:disabled) { background: #333; }
+    button:disabled { background: #999; cursor: not-allowed; }
+    .status {
+      margin-top: 20px;
+      font-size: 13px;
+      min-height: 20px;
+    }
+    .status.success { color: #2e7d32; }
+    .status.error { color: #c62828; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>N21 — Collection</h1>
+    <p>Avvia il riordino manuale delle collection.<br>Il processo richiede circa 2 minuti.</p>
+    <button id="btn" onclick="trigger()">Avvia riordino</button>
+    <div class="status" id="status"></div>
+  </div>
+
+  <script>
+    async function trigger() {
+      const btn = document.getElementById('btn');
+      const status = document.getElementById('status');
+      btn.disabled = true;
+      btn.textContent = 'Avvio in corso...';
+      status.textContent = '';
+      status.className = 'status';
+
+      try {
+        const res = await fetch('https://api.github.com/repos/sofiagiorgia/n21-reorder/actions/workflows/reorder.yml/dispatches', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer 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',
+            'Accept': 'application/vnd.github+json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ ref: 'main' }),
+        });
+
+        if (res.status === 204) {
+          status.textContent = '✓ Riordino avviato correttamente.';
+          status.className = 'status success';
+          btn.textContent = 'Avvia riordino';
+        } else {
+          const data = await res.json();
+          status.textContent = 'Errore: ' + (data.message || res.status);
+          status.className = 'status error';
+          btn.textContent = 'Avvia riordino';
+        }
+      } catch (e) {
+        status.textContent = 'Errore di rete. Riprova.';
+        status.className = 'status error';
+        btn.textContent = 'Avvia riordino';
+      }
+
+      btn.disabled = false;
+    }
+  </script>
+</body>
+</html>
