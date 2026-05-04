@@ -1,48 +1,82 @@
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN;
+const STORE = 'numero-ventuno.myshopify.com';
 const prompt = process.env.PROMPT;
 
 if (!prompt) {
   process.exit(0);
 }
 
-const COLLECTIONS = [
-  { id: 'gid://shopify/Collection/647561019723', name: 'Main collection', handle: 'main-collection' },
-  { id: 'gid://shopify/Collection/648284799307', name: 'Nuovi arrivi',    handle: 'nuovi-arrivi' },
-  { id: 'gid://shopify/Collection/648311996747', name: 'Abbigliamento donna', handle: 'abbigliamento-donna' },
-];
+// Fetch all collections from Shopify
+async function fetchCollections() {
+  const collections = [];
+  let cursor = null;
+
+  while (true) {
+    const afterClause = cursor ? `, after: "${cursor}"` : '';
+    const query = `
+      query {
+        collections(first: 250${afterClause}) {
+          edges {
+            node { id title handle }
+          }
+          pageInfo { hasNextPage endCursor }
+        }
+      }
+    `;
+    const res = await fetch(`https://${STORE}/admin/api/2024-01/graphql.json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
+      },
+      body: JSON.stringify({ query }),
+    });
+    const json = await res.json();
+    const { edges, pageInfo } = json.data.collections;
+    for (const { node } of edges) collections.push(node);
+    if (!pageInfo.hasNextPage) break;
+    cursor = pageInfo.endCursor;
+  }
+  return collections;
+}
+
+const collections = await fetchCollections();
 
 const systemPrompt = `
 Sei un assistente che aiuta a gestire le collection Shopify del brand di moda N21.
 
-Collection disponibili:
-${COLLECTIONS.map(c => `- "${c.name}" (id: ${c.id})`).join('\n')}
+Collection disponibili nel negozio:
+${collections.map(c => `- "${c.title}" (handle: ${c.handle}, id: ${c.id})`).join('\n')}
 
 I prodotti hanno due metafield:
 - "collection": valori noti: "capsule", "show", "resort", "main collection"
 - "season": valori noti: "fw26", "ss26", "fw25", "ss25" (fw=autunno/inverno, ss=primavera/estate, il numero è l'anno)
 
 L'utente descrive in linguaggio naturale:
-1. Su quali collection eseguire il riordino (se non specificato, usa tutte e tre)
+1. Su quali collection eseguire il riordino
 2. Quale ordine di priorità applicare ai gruppi (collection + season)
+3. Eventualmente, prodotti specifici da posizionare in una posizione precisa
 
-Se l'utente chiede di riordinare una collection che non esiste tra quelle disponibili, rispondi con:
-{ "error": "La collection '<nome>' non esiste. Le collection disponibili sono: Main collection, Nuovi arrivi, Abbigliamento donna." }
-
-Altrimenti, rispondi SOLO con un oggetto JSON valido nel seguente formato, senza testo aggiuntivo:
+Rispondi SOLO con un oggetto JSON valido nel seguente formato, senza testo aggiuntivo:
 {
   "collections": ["<id1>", "<id2>"],
+  "pinnedProducts": [
+    { "title": "<parte del titolo>", "position": 0 }
+  ],
   "groups": [
-    { "collection": "<valore_metafield>", "season": "<valore_metafield>" },
-    ...
+    { "collection": "<valore_metafield>", "season": "<valore_metafield>" }
   ],
   "stockFirst": true
 }
 
 Regole:
-- "collections": array degli ID delle collection da riordinare
-- "groups": array dei gruppi in ordine di priorità (il primo è il più importante); i prodotti non appartenenti a nessun gruppo vanno in fondo
-- "stockFirst": true significa che i prodotti con stock > 0 vengono prima di quelli esauriti, all'interno di ogni gruppo
-- Interpreta liberamente stagioni e collection (es. "invernale 2026" = fw26, "primavera estate" = ss26, "capsule" = capsule, ecc.)
+- "collections": array degli ID delle collection da riordinare; se l'utente non specifica, usa tutte
+- "pinnedProducts": prodotti da bloccare in una posizione specifica (0 = primo). Ometti se non richiesto
+- "groups": array dei gruppi in ordine di priorità; i prodotti senza gruppo vanno in fondo
+- "stockFirst": true = prodotti con stock > 0 prima degli esauriti, all'interno di ogni gruppo
+- Interpreta liberamente stagioni (es. "invernale 2026" = fw26, "primavera estate" = ss26)
+- Cerca il nome della collection anche per somiglianza (es. "accessori" = "Accessori donna")
 `;
 
 const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -54,7 +88,7 @@ const res = await fetch('https://api.anthropic.com/v1/messages', {
   },
   body: JSON.stringify({
     model: 'claude-sonnet-4-6',
-    max_tokens: 512,
+    max_tokens: 1024,
     system: systemPrompt,
     messages: [{ role: 'user', content: prompt }],
   }),
@@ -72,17 +106,11 @@ let text = data.content[0].text.trim();
 const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
 if (jsonMatch) text = jsonMatch[1].trim();
 
-// Validate it's valid JSON with expected structure
 let parsed;
 try {
   parsed = JSON.parse(text);
 } catch {
   console.error('Invalid JSON from Claude:', text);
-  process.exit(1);
-}
-
-if (parsed.error) {
-  console.error('Errore nella richiesta:', parsed.error);
   process.exit(1);
 }
 

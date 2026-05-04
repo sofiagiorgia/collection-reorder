@@ -113,7 +113,7 @@ async function fetchAllProducts(collectionId) {
   return products;
 }
 
-function sortProducts(products, groups, stockFirst) {
+function sortProducts(products, groups, stockFirst, pinnedProducts = []) {
   function getGroupIndex(p) {
     for (let i = 0; i < groups.length; i++) {
       if (p.collection === groups[i].collection && p.season === groups[i].season) {
@@ -123,7 +123,23 @@ function sortProducts(products, groups, stockFirst) {
     return groups.length;
   }
 
-  return [...products].sort((a, b) => {
+  // Identify pinned products by partial title match (case-insensitive)
+  const pinned = [];
+  const remaining = [];
+
+  for (const p of products) {
+    const pin = pinnedProducts.find(pp =>
+      p.title.toLowerCase().includes(pp.title.toLowerCase())
+    );
+    if (pin) {
+      pinned.push({ product: p, position: pin.position ?? pinned.length });
+    } else {
+      remaining.push(p);
+    }
+  }
+
+  // Sort remaining by group + stock
+  remaining.sort((a, b) => {
     const ga = getGroupIndex(a);
     const gb = getGroupIndex(b);
     if (ga !== gb) return ga - gb;
@@ -134,6 +150,16 @@ function sortProducts(products, groups, stockFirst) {
     }
     return 0;
   });
+
+  // Insert pinned products at their positions
+  pinned.sort((a, b) => a.position - b.position);
+  const result = [...remaining];
+  for (const { product, position } of pinned) {
+    const pos = Math.min(position, result.length);
+    result.splice(pos, 0, product);
+  }
+
+  return result;
 }
 
 async function reorderCollection(collectionId) {
@@ -144,7 +170,7 @@ async function reorderCollection(collectionId) {
   const products = await fetchAllProducts(collectionId);
   console.log(`Total: ${products.length}`);
 
-  const sorted = sortProducts(products, config.groups, config.stockFirst);
+  const sorted = sortProducts(products, config.groups, config.stockFirst, config.pinnedProducts ?? []);
 
   const BATCH = 250;
   for (let start = 0; start < sorted.length; start += BATCH) {
