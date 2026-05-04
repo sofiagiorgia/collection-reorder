@@ -106,6 +106,9 @@
   </div>
 
   <script>
+    const WORKER_URL = 'https://n21-reorder-trigger.partner-100.workers.dev';
+    const PASSWORD = 'n21reorder2026';
+
     async function trigger() {
       const btn = document.getElementById('btn');
       const status = document.getElementById('status');
@@ -117,27 +120,24 @@
       status.className = 'status';
 
       try {
-        const body = { ref: 'main' };
-        if (prompt) body.inputs = { prompt };
+        const body = { password: PASSWORD };
+        if (prompt) body.prompt = prompt;
 
-        const res = await fetch('https://api.github.com/repos/sofiagiorgia/n21-reorder/actions/workflows/reorder.yml/dispatches', {
+        const res = await fetch(WORKER_URL, {
           method: 'POST',
-          headers: {
-            'Authorization': 'Bearer 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',
-            'Accept': 'application/vnd.github+json',
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
 
-        if (res.status === 204) {
+        const data = await res.json();
+
+        if (data.ok) {
           status.textContent = prompt
             ? '✓ Riordino personalizzato avviato.'
             : '✓ Riordino avviato con configurazione di default.';
           status.className = 'status success';
         } else {
-          const data = await res.json();
-          status.textContent = 'Errore: ' + (data.message || res.status);
+          status.textContent = 'Errore: ' + (data.error || res.status);
           status.className = 'status error';
         }
       } catch (e) {
