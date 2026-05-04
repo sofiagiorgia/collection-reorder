@@ -63,7 +63,11 @@ if (!res.ok) {
 }
 
 const data = await res.json();
-const text = data.content[0].text.trim();
+let text = data.content[0].text.trim();
+
+// Strip markdown code blocks if present
+const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+if (jsonMatch) text = jsonMatch[1].trim();
 
 // Validate it's valid JSON
 try {
