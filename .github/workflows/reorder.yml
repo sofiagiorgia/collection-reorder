@@ -25,12 +25,9 @@ jobs:
         env:
           PROMPT: ${{ inputs.prompt }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          CONFIG=$(node interpret-prompt.mjs)
-          echo "REORDER_CONFIG=$CONFIG" >> $GITHUB_ENV
+        run: node interpret-prompt.mjs > reorder-config.json
 
       - name: Riordina collection
         env:
           SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
-          REORDER_CONFIG: ${{ env.REORDER_CONFIG }}
         run: node reorder-collection.mjs

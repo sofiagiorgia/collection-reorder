@@ -27,14 +27,16 @@ const COLLECTION_NAMES = {
   'gid://shopify/Collection/648311996747': 'Abbigliamento donna',
 };
 
-// Load config: from REORDER_CONFIG env var (set by interpret-prompt step) or default
+// Load config: from reorder-config.json (written by interpret-prompt step) or default
+import { existsSync, readFileSync } from 'fs';
+
 let config = DEFAULT_CONFIG;
-if (process.env.REORDER_CONFIG) {
+if (existsSync('reorder-config.json')) {
   try {
-    config = JSON.parse(process.env.REORDER_CONFIG);
+    config = JSON.parse(readFileSync('reorder-config.json', 'utf8'));
     console.log('Using custom config from prompt.');
   } catch {
-    console.warn('Invalid REORDER_CONFIG, using default.');
+    console.warn('Invalid reorder-config.json, using default.');
   }
 }
 
