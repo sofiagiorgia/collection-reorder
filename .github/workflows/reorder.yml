@@ -25,7 +25,11 @@ jobs:
         env:
           PROMPT: ${{ inputs.prompt }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: node interpret-prompt.mjs > reorder-config.json
+        run: |
+          if ! node interpret-prompt.mjs > reorder-config.json; then
+            echo "::error::Prompt non valido. Controlla le collection e i gruppi specificati."
+            exit 1
+          fi
 
       - name: Riordina collection
         env:

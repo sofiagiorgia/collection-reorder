@@ -25,7 +25,10 @@ L'utente descrive in linguaggio naturale:
 1. Su quali collection eseguire il riordino (se non specificato, usa tutte e tre)
 2. Quale ordine di priorità applicare ai gruppi (collection + season)
 
-Rispondi SOLO con un oggetto JSON valido nel seguente formato, senza testo aggiuntivo:
+Se l'utente chiede di riordinare una collection che non esiste tra quelle disponibili, rispondi con:
+{ "error": "La collection '<nome>' non esiste. Le collection disponibili sono: Main collection, Nuovi arrivi, Abbigliamento donna." }
+
+Altrimenti, rispondi SOLO con un oggetto JSON valido nel seguente formato, senza testo aggiuntivo:
 {
   "collections": ["<id1>", "<id2>"],
   "groups": [
@@ -69,11 +72,22 @@ let text = data.content[0].text.trim();
 const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
 if (jsonMatch) text = jsonMatch[1].trim();
 
-// Validate it's valid JSON
+// Validate it's valid JSON with expected structure
+let parsed;
 try {
-  JSON.parse(text);
+  parsed = JSON.parse(text);
 } catch {
   console.error('Invalid JSON from Claude:', text);
+  process.exit(1);
+}
+
+if (parsed.error) {
+  console.error('Errore nella richiesta:', parsed.error);
+  process.exit(1);
+}
+
+if (!Array.isArray(parsed.collections) || !Array.isArray(parsed.groups)) {
+  console.error('Config non valida da Claude:', text);
   process.exit(1);
 }
 
