@@ -162,9 +162,32 @@ function sortProducts(products, groups, stockFirst, pinnedProducts = []) {
   return result;
 }
 
+async function ensureManualSort(collectionId) {
+  const query = `query { collection(id: "${collectionId}") { sortOrder } }`;
+  const data = await shopifyQuery(query);
+  if (data.collection.sortOrder !== 'MANUAL') {
+    console.log('  Sort order is not manual — updating...');
+    const mutation = `
+      mutation {
+        collectionUpdate(input: { id: "${collectionId}", sortOrder: MANUAL }) {
+          userErrors { field message }
+        }
+      }
+    `;
+    const result = await shopifyQuery(mutation);
+    if (result.collectionUpdate.userErrors.length > 0) {
+      console.error('Error setting manual sort:', result.collectionUpdate.userErrors);
+      process.exit(1);
+    }
+    console.log('  Sort order set to manual ✓');
+  }
+}
+
 async function reorderCollection(collectionId) {
   const name = COLLECTION_NAMES[collectionId] ?? collectionId;
   console.log(`\n=== ${name} ===`);
+
+  await ensureManualSort(collectionId);
 
   console.log('Fetching products...');
   const products = await fetchAllProducts(collectionId);
