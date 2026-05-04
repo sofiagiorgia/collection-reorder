@@ -3,7 +3,12 @@ name: Reorder N21 Collections
 on:
   schedule:
     - cron: '0 6 * * *'  # 7:00 CET (UTC+1) / 8:00 CEST (UTC+2)
-  workflow_dispatch:      # allows manual trigger from GitHub UI
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: 'Istruzioni di riordino in linguaggio naturale (lascia vuoto per usare la configurazione di default)'
+        required: false
+        type: string
 
 jobs:
   reorder:
@@ -15,7 +20,17 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Reorder collections
+      - name: Interpreta prompt
+        if: ${{ inputs.prompt != '' }}
+        env:
+          PROMPT: ${{ inputs.prompt }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          CONFIG=$(node interpret-prompt.mjs)
+          echo "REORDER_CONFIG=$CONFIG" >> $GITHUB_ENV
+
+      - name: Riordina collection
         env:
           SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
+          REORDER_CONFIG: ${{ env.REORDER_CONFIG }}
         run: node reorder-collection.mjs

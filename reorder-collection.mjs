@@ -6,11 +6,39 @@ if (!ACCESS_TOKEN) {
   process.exit(1);
 }
 
-const COLLECTIONS = [
-  { id: 'gid://shopify/Collection/647561019723', name: 'Main collection' },
-  { id: 'gid://shopify/Collection/648284799307', name: 'Nuovi arrivi' },
-  { id: 'gid://shopify/Collection/648311996747', name: 'Abbigliamento donna' },
-];
+// Default config (used for scheduled runs)
+const DEFAULT_CONFIG = {
+  collections: [
+    'gid://shopify/Collection/647561019723',
+    'gid://shopify/Collection/648284799307',
+    'gid://shopify/Collection/648311996747',
+  ],
+  groups: [
+    { collection: 'capsule', season: 'fw26' },
+    { collection: 'show',    season: 'ss26' },
+    { collection: 'resort',  season: 'ss26' },
+  ],
+  stockFirst: true,
+};
+
+const COLLECTION_NAMES = {
+  'gid://shopify/Collection/647561019723': 'Main collection',
+  'gid://shopify/Collection/648284799307': 'Nuovi arrivi',
+  'gid://shopify/Collection/648311996747': 'Abbigliamento donna',
+};
+
+// Load config: from REORDER_CONFIG env var (set by interpret-prompt step) or default
+let config = DEFAULT_CONFIG;
+if (process.env.REORDER_CONFIG) {
+  try {
+    config = JSON.parse(process.env.REORDER_CONFIG);
+    console.log('Using custom config from prompt.');
+  } catch {
+    console.warn('Invalid REORDER_CONFIG, using default.');
+  }
+}
+
+console.log('Config:', JSON.stringify(config, null, 2));
 
 const API_URL = `https://${STORE}/admin/api/2024-01/graphql.json`;
 
@@ -83,13 +111,7 @@ async function fetchAllProducts(collectionId) {
   return products;
 }
 
-function sortProducts(products) {
-  const groups = [
-    { collection: 'capsule', season: 'fw26' },
-    { collection: 'show',    season: 'ss26' },
-    { collection: 'resort',  season: 'ss26' },
-  ];
-
+function sortProducts(products, groups, stockFirst) {
   function getGroupIndex(p) {
     for (let i = 0; i < groups.length; i++) {
       if (p.collection === groups[i].collection && p.season === groups[i].season) {
@@ -103,20 +125,24 @@ function sortProducts(products) {
     const ga = getGroupIndex(a);
     const gb = getGroupIndex(b);
     if (ga !== gb) return ga - gb;
-    const sa = a.stock >= 1 ? 0 : 1;
-    const sb = b.stock >= 1 ? 0 : 1;
-    return sa - sb;
+    if (stockFirst) {
+      const sa = a.stock >= 1 ? 0 : 1;
+      const sb = b.stock >= 1 ? 0 : 1;
+      if (sa !== sb) return sa - sb;
+    }
+    return 0;
   });
 }
 
-async function reorderCollection({ id, name }) {
+async function reorderCollection(collectionId) {
+  const name = COLLECTION_NAMES[collectionId] ?? collectionId;
   console.log(`\n=== ${name} ===`);
 
   console.log('Fetching products...');
-  const products = await fetchAllProducts(id);
+  const products = await fetchAllProducts(collectionId);
   console.log(`Total: ${products.length}`);
 
-  const sorted = sortProducts(products);
+  const sorted = sortProducts(products, config.groups, config.stockFirst);
 
   const BATCH = 250;
   for (let start = 0; start < sorted.length; start += BATCH) {
@@ -133,7 +159,7 @@ async function reorderCollection({ id, name }) {
     `;
 
     console.log(`Sending positions ${start}–${start + batch.length - 1}...`);
-    const result = await shopifyQuery(mutation, { id, moves });
+    const result = await shopifyQuery(mutation, { id: collectionId, moves });
     const { userErrors, job } = result.collectionReorderProducts;
 
     if (userErrors.length > 0) {
@@ -144,8 +170,8 @@ async function reorderCollection({ id, name }) {
   }
 }
 
-for (const collection of COLLECTIONS) {
-  await reorderCollection(collection);
+for (const collectionId of config.collections) {
+  await reorderCollection(collectionId);
 }
 
 console.log('\n✅ All collections reordered successfully!');

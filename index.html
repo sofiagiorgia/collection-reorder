@@ -18,21 +18,50 @@
       background: #fff;
       border-radius: 4px;
       padding: 48px 40px;
-      width: 360px;
-      text-align: center;
+      width: 420px;
       box-shadow: 0 1px 4px rgba(0,0,0,0.1);
     }
     h1 {
-      font-size: 13px;
-      letter-spacing: 0.15em;
+      font-size: 12px;
+      letter-spacing: 0.18em;
       text-transform: uppercase;
       color: #111;
+      margin-bottom: 6px;
+    }
+    .subtitle {
+      font-size: 12px;
+      color: #999;
+      margin-bottom: 32px;
+    }
+    label {
+      display: block;
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #555;
       margin-bottom: 8px;
     }
-    p {
+    textarea {
+      width: 100%;
+      height: 120px;
+      border: 1px solid #ddd;
+      border-radius: 2px;
+      padding: 12px;
       font-size: 13px;
-      color: #888;
-      margin-bottom: 32px;
+      font-family: inherit;
+      color: #111;
+      resize: vertical;
+      outline: none;
+      line-height: 1.5;
+      transition: border-color 0.2s;
+    }
+    textarea:focus { border-color: #111; }
+    textarea::placeholder { color: #bbb; }
+    .hint {
+      font-size: 11px;
+      color: #bbb;
+      margin-top: 8px;
+      margin-bottom: 28px;
       line-height: 1.5;
     }
     button {
@@ -41,19 +70,20 @@
       background: #111;
       color: #fff;
       border: none;
-      font-size: 12px;
-      letter-spacing: 0.12em;
+      font-size: 11px;
+      letter-spacing: 0.14em;
       text-transform: uppercase;
       cursor: pointer;
       border-radius: 2px;
       transition: background 0.2s;
     }
     button:hover:not(:disabled) { background: #333; }
-    button:disabled { background: #999; cursor: not-allowed; }
+    button:disabled { background: #aaa; cursor: not-allowed; }
     .status {
-      margin-top: 20px;
-      font-size: 13px;
-      min-height: 20px;
+      margin-top: 18px;
+      font-size: 12px;
+      min-height: 18px;
+      text-align: center;
     }
     .status.success { color: #2e7d32; }
     .status.error { color: #c62828; }
@@ -61,8 +91,16 @@
 </head>
 <body>
   <div class="card">
-    <h1>N21 — Collection</h1>
-    <p>Avvia il riordino manuale delle collection.<br>Il processo richiede circa 2 minuti.</p>
+    <h1>N21 — Riordino Collection</h1>
+    <p class="subtitle">Il riordino automatico avviene ogni giorno alle 7:00.</p>
+
+    <label for="prompt">Istruzioni personalizzate</label>
+    <textarea
+      id="prompt"
+      placeholder="Es: riordina solo abbigliamento donna, metti prima la capsule fw26 con stock, poi show ss26, poi resort ss26, tutto il resto in fondo."
+    ></textarea>
+    <p class="hint">Lascia vuoto per usare la configurazione di default.<br>Puoi specificare collection, stagioni e logica di ordinamento.</p>
+
     <button id="btn" onclick="trigger()">Avvia riordino</button>
     <div class="status" id="status"></div>
   </div>
@@ -71,12 +109,17 @@
     async function trigger() {
       const btn = document.getElementById('btn');
       const status = document.getElementById('status');
+      const prompt = document.getElementById('prompt').value.trim();
+
       btn.disabled = true;
       btn.textContent = 'Avvio in corso...';
       status.textContent = '';
       status.className = 'status';
 
       try {
+        const body = { ref: 'main' };
+        if (prompt) body.inputs = { prompt };
+
         const res = await fetch('https://api.github.com/repos/sofiagiorgia/n21-reorder/actions/workflows/reorder.yml/dispatches', {
           method: 'POST',
           headers: {
@@ -84,25 +127,25 @@
             'Accept': 'application/vnd.github+json',
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ ref: 'main' }),
+          body: JSON.stringify(body),
         });
 
         if (res.status === 204) {
-          status.textContent = '✓ Riordino avviato correttamente.';
+          status.textContent = prompt
+            ? '✓ Riordino personalizzato avviato.'
+            : '✓ Riordino avviato con configurazione di default.';
           status.className = 'status success';
-          btn.textContent = 'Avvia riordino';
         } else {
           const data = await res.json();
           status.textContent = 'Errore: ' + (data.message || res.status);
           status.className = 'status error';
-          btn.textContent = 'Avvia riordino';
         }
       } catch (e) {
         status.textContent = 'Errore di rete. Riprova.';
         status.className = 'status error';
-        btn.textContent = 'Avvia riordino';
       }
 
+      btn.textContent = 'Avvia riordino';
       btn.disabled = false;
     }
   </script>
