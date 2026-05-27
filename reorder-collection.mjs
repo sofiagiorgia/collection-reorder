@@ -28,7 +28,7 @@ const COLLECTION_NAMES = {
 };
 
 // Load config: from reorder-config.json (written by interpret-prompt step) or default
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, appendFileSync } from 'fs';
 
 let config = DEFAULT_CONFIG;
 if (existsSync('reorder-config.json')) {
@@ -58,6 +58,12 @@ console.log('Config:', JSON.stringify(config, null, 2));
 
 const API_URL = `https://${STORE}/admin/api/2024-01/graphql.json`;
 
+function writeSummary(text) {
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY, text);
+  }
+}
+
 async function shopifyQuery(query, variables = {}) {
   const res = await fetch(API_URL, {
     method: 'POST',
@@ -68,9 +74,9 @@ async function shopifyQuery(query, variables = {}) {
     body: JSON.stringify({ query, variables }),
   });
 
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  if (!res.ok) throw new Error(`Shopify API HTTP ${res.status}: ${await res.text()}`);
   const json = await res.json();
-  if (json.errors) throw new Error(JSON.stringify(json.errors, null, 2));
+  if (json.errors) throw new Error(`Shopify GraphQL errors: ${JSON.stringify(json.errors, null, 2)}`);
   return json.data;
 }
 
@@ -84,6 +90,7 @@ async function fetchAllProducts(collectionId) {
     const query = `
       query {
         collection(id: "${collectionId}") {
+          title
           products(first: 250${afterClause}) {
             edges {
               node {
@@ -104,6 +111,11 @@ async function fetchAllProducts(collectionId) {
 
     console.log(`  Fetching page ${page}...`);
     const data = await shopifyQuery(query);
+
+    if (!data.collection) {
+      throw new Error(`Collection non trovata: ${collectionId}\n   Verifica che l'ID nel config sia corretto e che la collection esista nel negozio.`);
+    }
+
     const { edges, pageInfo } = data.collection.products;
 
     for (const { node } of edges) {
@@ -127,6 +139,35 @@ async function fetchAllProducts(collectionId) {
   }
 
   return products;
+}
+
+function checkGroupCoverage(products, groups) {
+  if (groups.length === 0) return [];
+
+  const rows = [];
+  for (const group of groups) {
+    const count = products.filter(p =>
+      Object.entries(group).every(([k, v]) => p[k] === (v?.trim().toLowerCase() ?? ''))
+    ).length;
+    const label = JSON.stringify(group);
+    if (count === 0) {
+      console.warn(`⚠️  Gruppo ${label}: nessun prodotto corrisponde — controlla chiave e valore del metafield`);
+      rows.push({ label, count, warning: true });
+    } else {
+      console.log(`  Gruppo ${label}: ${count} prodotti`);
+      rows.push({ label, count, warning: false });
+    }
+  }
+
+  const unmatched = products.filter(p =>
+    !groups.some(g => Object.entries(g).every(([k, v]) => p[k] === (v?.trim().toLowerCase() ?? '')))
+  ).length;
+  if (unmatched > 0) {
+    console.log(`  Senza gruppo (fondo): ${unmatched} prodotti`);
+    rows.push({ label: '_senza gruppo_', count: unmatched, warning: false });
+  }
+
+  return rows;
 }
 
 function sortProducts(products, groups, stockFirst, pinnedProducts = [], oosAtEnd = false) {
@@ -194,6 +235,9 @@ function sortProducts(products, groups, stockFirst, pinnedProducts = [], oosAtEn
 async function ensureManualSort(collectionId) {
   const query = `query { collection(id: "${collectionId}") { sortOrder } }`;
   const data = await shopifyQuery(query);
+  if (!data.collection) {
+    throw new Error(`Collection non trovata durante verifica sortOrder: ${collectionId}`);
+  }
   if (data.collection.sortOrder !== 'MANUAL') {
     console.log('  Sort order is not manual — updating...');
     const mutation = `
@@ -205,12 +249,14 @@ async function ensureManualSort(collectionId) {
     `;
     const result = await shopifyQuery(mutation);
     if (result.collectionUpdate.userErrors.length > 0) {
-      console.error('Error setting manual sort:', result.collectionUpdate.userErrors);
-      process.exit(1);
+      throw new Error(`Errore impostando sort manuale: ${JSON.stringify(result.collectionUpdate.userErrors)}`);
     }
     console.log('  Sort order set to manual ✓');
   }
 }
+
+// Accumulate summary rows
+const summaryRows = [];
 
 async function reorderCollection(collectionId) {
   const name = COLLECTION_NAMES[collectionId] ?? collectionId;
@@ -221,6 +267,9 @@ async function reorderCollection(collectionId) {
   console.log('Fetching products...');
   const products = await fetchAllProducts(collectionId);
   console.log(`Total: ${products.length}`);
+
+  const coverageRows = checkGroupCoverage(products, config.groups);
+  const hasWarning = coverageRows.some(r => r.warning);
 
   const sorted = sortProducts(products, config.groups, config.stockFirst, config.pinnedProducts ?? [], config.oosAtEnd ?? false);
 
@@ -243,15 +292,39 @@ async function reorderCollection(collectionId) {
     const { userErrors, job } = result.collectionReorderProducts;
 
     if (userErrors.length > 0) {
-      console.error('Errors:', JSON.stringify(userErrors, null, 2));
-      process.exit(1);
+      throw new Error(`Errore nel riordino di ${name}: ${JSON.stringify(userErrors)}`);
     }
     console.log(`  Job ID: ${job?.id ?? 'N/A'} ✓`);
   }
+
+  summaryRows.push({ name, total: products.length, coverageRows, warning: hasWarning });
 }
 
-for (const collectionId of config.collections) {
-  await reorderCollection(collectionId);
+try {
+  for (const collectionId of config.collections) {
+    await reorderCollection(collectionId);
+  }
+} catch (err) {
+  console.error(`\n❌ Errore: ${err.message}`);
+  writeSummary(`## ❌ Errore durante il riordino\n\n\`\`\`\n${err.message}\n\`\`\`\n`);
+  process.exit(1);
 }
 
 console.log('\n✅ All collections reordered successfully!');
+
+// Write step summary
+const configSource = existsSync('reorder-config.json') ? 'prompt personalizzato' : 'configurazione di default';
+const collectionSections = summaryRows.map(({ name, total, coverageRows, warning }) => {
+  const icon = warning ? '⚠️' : '✅';
+  const groupTable = coverageRows.length > 0
+    ? `\n  | Gruppo | Prodotti |\n  |--------|----------|\n${coverageRows.map(r => `  | ${r.warning ? '⚠️ ' : ''}${r.label} | ${r.count} |`).join('\n')}`
+    : '';
+  return `- ${icon} **${name}** — ${total} prodotti${groupTable}`;
+}).join('\n\n');
+
+writeSummary(`## Riordino N21 completato
+
+**Config usata:** ${configSource}
+
+${collectionSections}
+`);

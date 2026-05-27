@@ -7,6 +7,14 @@ if (!prompt) {
   process.exit(0);
 }
 
+import { appendFileSync } from 'fs';
+
+function writeSummary(text) {
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY, text);
+  }
+}
+
 async function shopifyQuery(query) {
   const res = await fetch(`https://${STORE}/admin/api/2024-01/graphql.json`, {
     method: 'POST',
@@ -16,7 +24,12 @@ async function shopifyQuery(query) {
     },
     body: JSON.stringify({ query }),
   });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Shopify API HTTP ${res.status}: ${body}`);
+  }
   const json = await res.json();
+  if (json.errors) throw new Error(`Shopify GraphQL errors: ${JSON.stringify(json.errors)}`);
   return json.data;
 }
 
@@ -117,7 +130,8 @@ const res = await fetch('https://api.anthropic.com/v1/messages', {
 });
 
 if (!res.ok) {
-  console.error('Anthropic API error:', await res.text());
+  const body = await res.text();
+  console.error(`Anthropic API HTTP ${res.status}: ${body}`);
   process.exit(1);
 }
 
@@ -132,13 +146,53 @@ let parsed;
 try {
   parsed = JSON.parse(text);
 } catch {
-  console.error('Invalid JSON from Claude:', text);
+  console.error('Claude ha restituito JSON non valido:');
+  console.error(text);
+  writeSummary(`## ❌ Errore — JSON non valido\n\n**Prompt:** ${prompt}\n\n**Risposta di Claude:**\n\`\`\`\n${text}\n\`\`\`\n`);
   process.exit(1);
 }
 
 if (!Array.isArray(parsed.collections) || !Array.isArray(parsed.groups)) {
-  console.error('Config non valida da Claude:', text);
+  console.error('Config mancante di "collections" o "groups":');
+  console.error(JSON.stringify(parsed, null, 2));
+  writeSummary(`## ❌ Errore — config incompleta\n\n**Prompt:** ${prompt}\n\n**Config generata:**\n\`\`\`json\n${JSON.stringify(parsed, null, 2)}\n\`\`\`\n`);
   process.exit(1);
 }
+
+// Warn if any group key is not among known metafield definitions
+const knownKeys = new Set(metafieldDefs.map(m => m.key));
+const unknownKeys = [];
+if (knownKeys.size > 0) {
+  for (const group of parsed.groups) {
+    for (const key of Object.keys(group)) {
+      if (!knownKeys.has(key)) unknownKeys.push(key);
+    }
+  }
+  if (unknownKeys.length > 0) {
+    console.error(`⚠️  Attenzione: i seguenti metafield usati nei gruppi non risultano definiti nel negozio: ${unknownKeys.join(', ')}`);
+    console.error(`   Metafield disponibili: ${[...knownKeys].join(', ')}`);
+  }
+}
+
+// Log generated config to stderr (visible in Actions log even when stdout goes to file)
+console.error('=== Config generata da Claude ===');
+console.error(JSON.stringify(parsed, null, 2));
+
+const warningSection = unknownKeys.length > 0
+  ? `\n> ⚠️ **Attenzione:** i metafield \`${unknownKeys.join('`, `')}\` non sono definiti nel negozio. Il riordino potrebbe non fare quello che ti aspetti.\n`
+  : '';
+
+writeSummary(`## Interpretazione prompt
+
+**Prompt ricevuto:** ${prompt}
+
+${warningSection}
+**Config generata:**
+\`\`\`json
+${JSON.stringify(parsed, null, 2)}
+\`\`\`
+
+**Metafield disponibili nel negozio:** ${knownKeys.size > 0 ? [...knownKeys].map(k => `\`${k}\``).join(', ') : '_nessuno_'}
+`);
 
 process.stdout.write(text);
