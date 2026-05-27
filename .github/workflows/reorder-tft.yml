@@ -1,0 +1,40 @@
+name: Reorder TFT Collections
+
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: 'Istruzioni di riordino in linguaggio naturale'
+        required: true
+        type: string
+
+jobs:
+  reorder:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      STORE: tft-home-furniture.myshopify.com
+      STORE_CONFIG: stores/tft/default-config.json
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Interpreta prompt
+        env:
+          PROMPT: ${{ inputs.prompt }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN_TFT }}
+        run: |
+          if ! node interpret-prompt.mjs > reorder-config.json; then
+            echo "::error::Prompt non valido o errore di interpretazione — controlla il log."
+            exit 1
+          fi
+
+      - name: Riordina collection
+        env:
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN_TFT }}
+        run: node reorder-collection.mjs
