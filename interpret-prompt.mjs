@@ -56,14 +56,19 @@ async function fetchCollections() {
 }
 
 async function fetchProductMetafieldDefinitions() {
-  const data = await shopifyQuery(`
-    query {
-      metafieldDefinitions(first: 100, ownerType: PRODUCT) {
-        edges { node { namespace key name } }
+  try {
+    const data = await shopifyQuery(`
+      query {
+        metafieldDefinitions(first: 100, ownerType: PRODUCT) {
+          edges { node { namespace key name } }
+        }
       }
-    }
-  `);
-  return (data?.metafieldDefinitions?.edges ?? []).map(({ node }) => node);
+    `);
+    return (data?.metafieldDefinitions?.edges ?? []).map(({ node }) => node);
+  } catch (err) {
+    console.error(`⚠️  Impossibile leggere i metafield definitions (permessi insufficienti?): ${err.message}`);
+    return [];
+  }
 }
 
 const [collections, metafieldDefs] = await Promise.all([
