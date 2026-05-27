@@ -7,33 +7,34 @@ if (!prompt) {
   process.exit(0);
 }
 
-// Fetch all collections from Shopify
+async function shopifyQuery(query) {
+  const res = await fetch(`https://${STORE}/admin/api/2024-01/graphql.json`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
+    },
+    body: JSON.stringify({ query }),
+  });
+  const json = await res.json();
+  return json.data;
+}
+
 async function fetchCollections() {
   const collections = [];
   let cursor = null;
 
   while (true) {
     const afterClause = cursor ? `, after: "${cursor}"` : '';
-    const query = `
+    const data = await shopifyQuery(`
       query {
         collections(first: 250${afterClause}) {
-          edges {
-            node { id title handle }
-          }
+          edges { node { id title handle } }
           pageInfo { hasNextPage endCursor }
         }
       }
-    `;
-    const res = await fetch(`https://${STORE}/admin/api/2024-01/graphql.json`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
-      },
-      body: JSON.stringify({ query }),
-    });
-    const json = await res.json();
-    const { edges, pageInfo } = json.data.collections;
+    `);
+    const { edges, pageInfo } = data.collections;
     for (const { node } of edges) collections.push(node);
     if (!pageInfo.hasNextPage) break;
     cursor = pageInfo.endCursor;
@@ -41,7 +42,25 @@ async function fetchCollections() {
   return collections;
 }
 
-const collections = await fetchCollections();
+async function fetchProductMetafieldDefinitions() {
+  const data = await shopifyQuery(`
+    query {
+      metafieldDefinitions(first: 100, ownerType: PRODUCT) {
+        edges { node { namespace key name } }
+      }
+    }
+  `);
+  return (data?.metafieldDefinitions?.edges ?? []).map(({ node }) => node);
+}
+
+const [collections, metafieldDefs] = await Promise.all([
+  fetchCollections(),
+  fetchProductMetafieldDefinitions(),
+]);
+
+const metafieldList = metafieldDefs.length > 0
+  ? metafieldDefs.map(m => `- key: "${m.key}" (nome: "${m.name}", namespace: "${m.namespace}")`).join('\n')
+  : '- Nessun metafield definito trovato; usa i nomi esatti indicati dall\'utente.';
 
 const systemPrompt = `
 Sei un assistente che aiuta a gestire le collection Shopify del brand di moda N21.
@@ -49,14 +68,14 @@ Sei un assistente che aiuta a gestire le collection Shopify del brand di moda N2
 Collection disponibili nel negozio:
 ${collections.map(c => `- "${c.title}" (handle: ${c.handle}, id: ${c.id})`).join('\n')}
 
-I prodotti hanno i seguenti metafield (namespace "custom"):
-- "collection": valori noti: "capsule", "show", "resort", "main collection"
-- "season": valori noti: "fw26", "ss26", "fw25", "ss25" (fw=autunno/inverno, ss=primavera/estate, il numero è l'anno)
-- "gender": valori noti: "donna", "uomo", "unisex" (e varianti simili)
+Metafield definiti sui prodotti:
+${metafieldList}
+
+I valori dei metafield sono stringhe; nel confronto verranno normalizzati in minuscolo, quindi scrivi sempre i valori in minuscolo nel JSON.
 
 L'utente descrive in linguaggio naturale:
 1. Su quali collection eseguire il riordino
-2. Quale ordine di priorità applicare ai gruppi (puoi filtrare per uno o più metafield)
+2. Quale ordine di priorità applicare ai gruppi (puoi usare qualsiasi metafield)
 3. Eventualmente, prodotti specifici da posizionare in una posizione precisa
 
 Rispondi SOLO con un oggetto JSON valido nel seguente formato, senza testo aggiuntivo:
@@ -66,8 +85,7 @@ Rispondi SOLO con un oggetto JSON valido nel seguente formato, senza testo aggiu
     { "title": "<parte del titolo>", "position": 0 }
   ],
   "groups": [
-    { "collection": "<valore_metafield>", "season": "<valore_metafield>" },
-    { "gender": "<valore_metafield>" }
+    { "<chiave_metafield>": "<valore>", "<chiave_metafield2>": "<valore2>" }
   ],
   "stockFirst": true,
   "oosAtEnd": false
@@ -76,11 +94,10 @@ Rispondi SOLO con un oggetto JSON valido nel seguente formato, senza testo aggiu
 Regole:
 - "collections": array degli ID delle collection da riordinare; se l'utente non specifica, usa tutte
 - "pinnedProducts": prodotti da bloccare in una posizione specifica (0 = primo). Ometti se non richiesto
-- "groups": array dei gruppi in ordine di priorità; ogni gruppo può filtrare su qualsiasi combinazione di metafield (collection, season, gender, ecc.); tutti i campi specificati nel gruppo devono corrispondere; i prodotti senza gruppo vanno in fondo
-- "stockFirst": true = prodotti in stock prima degli esauriti, all'interno di ogni gruppo (ignorato se oosAtEnd è true)
-- "oosAtEnd": true = tutti i prodotti out-of-stock vengono messi alla fine di tutto, dopo tutti gli in-stock di ogni gruppo
-- Interpreta liberamente stagioni (es. "invernale 2026" = fw26, "primavera estate" = ss26)
-- Interpreta liberamente il gender (es. "Donna" = "donna", "femminile" = "donna")
+- "groups": ogni elemento è un oggetto con una o più coppie chiave-valore metafield; un prodotto appartiene al gruppo se tutti i campi specificati corrispondono; i gruppi sono in ordine di priorità; i prodotti senza gruppo vanno in fondo
+- "stockFirst": true = in-stock prima degli OOS, all'interno di ogni gruppo (ignorato se oosAtEnd è true)
+- "oosAtEnd": true = tutti i prodotti OOS finiscono dopo tutti gli in-stock, indipendentemente dal gruppo
+- Interpreta liberamente le stagioni (es. "invernale 2026" = "fw26", "primavera estate" = "ss26")
 - Cerca il nome della collection anche per somiglianza (es. "accessori" = "Accessori donna")
 `;
 

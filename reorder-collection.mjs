@@ -40,6 +40,20 @@ if (existsSync('reorder-config.json')) {
   }
 }
 
+// Extract unique metafield keys referenced across all groups
+function getGroupKeys(groups) {
+  const keys = new Set();
+  for (const group of groups) {
+    for (const key of Object.keys(group)) keys.add(key);
+  }
+  return [...keys];
+}
+
+const groupKeys = getGroupKeys(config.groups);
+const metafieldsFragment = groupKeys.length > 0
+  ? `metafields(identifiers: [${groupKeys.map(k => `{namespace: "custom", key: ${JSON.stringify(k)}}`).join(', ')}]) { key value }`
+  : '';
+
 console.log('Config:', JSON.stringify(config, null, 2));
 
 const API_URL = `https://${STORE}/admin/api/2024-01/graphql.json`;
@@ -76,9 +90,7 @@ async function fetchAllProducts(collectionId) {
                 id
                 title
                 totalInventory
-                metaCol: metafield(namespace: "custom", key: "collection") { value }
-                metaSeason: metafield(namespace: "custom", key: "season") { value }
-                metaGender: metafield(namespace: "custom", key: "gender") { value }
+                ${metafieldsFragment}
               }
             }
             pageInfo {
@@ -95,13 +107,15 @@ async function fetchAllProducts(collectionId) {
     const { edges, pageInfo } = data.collection.products;
 
     for (const { node } of edges) {
+      const meta = {};
+      for (const mf of (node.metafields ?? [])) {
+        meta[mf.key] = mf.value?.trim().toLowerCase() ?? '';
+      }
       products.push({
         id: node.id,
         title: node.title,
         stock: node.totalInventory ?? 0,
-        collection: node.metaCol?.value?.trim().toLowerCase() ?? '',
-        season: node.metaSeason?.value?.trim().toLowerCase() ?? '',
-        gender: node.metaGender?.value?.trim().toLowerCase() ?? '',
+        ...meta,
       });
     }
 
