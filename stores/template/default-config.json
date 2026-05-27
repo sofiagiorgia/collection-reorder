@@ -1,0 +1,16 @@
+{
+  "store": "nome-store.myshopify.com",
+  "collectionNames": {
+    "gid://shopify/Collection/XXXXXXXXXX": "Nome Collection 1",
+    "gid://shopify/Collection/YYYYYYYYYY": "Nome Collection 2"
+  },
+  "collections": [
+    "gid://shopify/Collection/XXXXXXXXXX",
+    "gid://shopify/Collection/YYYYYYYYYY"
+  ],
+  "groups": [
+    { "collection": "capsule", "season": "fw26" },
+    { "collection": "show",    "season": "ss26" }
+  ],
+  "stockFirst": true
+}

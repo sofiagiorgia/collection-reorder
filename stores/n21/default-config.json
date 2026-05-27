@@ -1,0 +1,19 @@
+{
+  "store": "numero-ventuno.myshopify.com",
+  "collectionNames": {
+    "gid://shopify/Collection/647561019723": "Main collection",
+    "gid://shopify/Collection/648284799307": "Nuovi arrivi",
+    "gid://shopify/Collection/648311996747": "Abbigliamento donna"
+  },
+  "collections": [
+    "gid://shopify/Collection/647561019723",
+    "gid://shopify/Collection/648284799307",
+    "gid://shopify/Collection/648311996747"
+  ],
+  "groups": [
+    { "collection": "capsule", "season": "fw26" },
+    { "collection": "show",    "season": "ss26" },
+    { "collection": "resort",  "season": "ss26" }
+  ],
+  "stockFirst": true
+}

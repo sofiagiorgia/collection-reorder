@@ -15,6 +15,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      STORE: numero-ventuno.myshopify.com
+      STORE_CONFIG: stores/n21/default-config.json
     steps:
       - uses: actions/checkout@v4
 

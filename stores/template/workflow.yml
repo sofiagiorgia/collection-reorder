@@ -1,0 +1,55 @@
+# Copia questo file in .github/workflows/reorder-<nomebrand>.yml
+# e sostituisci tutti i valori tra <...>
+#
+# Segreti GitHub da creare (Settings → Secrets → Actions):
+#   SHOPIFY_ACCESS_TOKEN_<NOMEBRAND>  → token Admin API Shopify dello store
+#   ANTHROPIC_API_KEY                 → già presente, condiviso tra tutti gli store
+#
+# Cloudflare Worker: duplica il Worker esistente e aggiorna:
+#   - WORKFLOW_FILE  → reorder-<nomebrand>.yml
+#   - PASSWORD       → password a scelta per lo store manager
+#   - GITHUB_TOKEN   → stesso token (o uno dedicato)
+
+name: Reorder <NomeBrand> Collections
+
+on:
+  schedule:
+    - cron: '0 6 * * *'  # 7:00 CET / 8:00 CEST — modifica a piacere
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: 'Istruzioni di riordino in linguaggio naturale (lascia vuoto per default)'
+        required: false
+        type: string
+
+jobs:
+  reorder:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      STORE: <nome-store.myshopify.com>
+      STORE_CONFIG: stores/<nomebrand>/default-config.json
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Interpreta prompt
+        if: ${{ inputs.prompt != '' }}
+        env:
+          PROMPT: ${{ inputs.prompt }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN_<NOMEBRAND> }}
+        run: |
+          if ! node interpret-prompt.mjs > reorder-config.json; then
+            echo "::error::Prompt non valido o errore di interpretazione — controlla il log."
+            exit 1
+          fi
+
+      - name: Riordina collection
+        env:
+          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN_<NOMEBRAND> }}
+        run: node reorder-collection.mjs

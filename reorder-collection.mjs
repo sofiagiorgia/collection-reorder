@@ -1,35 +1,40 @@
-const STORE = 'numero-ventuno.myshopify.com';
+const STORE = process.env.STORE;
 const ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN;
 
+if (!STORE) {
+  console.error('Errore: variabile d\'ambiente STORE non impostata (es. mio-store.myshopify.com)');
+  process.exit(1);
+}
 if (!ACCESS_TOKEN) {
-  console.error('Missing SHOPIFY_ACCESS_TOKEN environment variable');
+  console.error('Errore: variabile d\'ambiente SHOPIFY_ACCESS_TOKEN non impostata');
   process.exit(1);
 }
 
-// Default config (used for scheduled runs)
-const DEFAULT_CONFIG = {
-  collections: [
-    'gid://shopify/Collection/647561019723',
-    'gid://shopify/Collection/648284799307',
-    'gid://shopify/Collection/648311996747',
-  ],
-  groups: [
-    { collection: 'capsule', season: 'fw26' },
-    { collection: 'show',    season: 'ss26' },
-    { collection: 'resort',  season: 'ss26' },
-  ],
-  stockFirst: true,
-};
-
-const COLLECTION_NAMES = {
-  'gid://shopify/Collection/647561019723': 'Main collection',
-  'gid://shopify/Collection/648284799307': 'Nuovi arrivi',
-  'gid://shopify/Collection/648311996747': 'Abbigliamento donna',
-};
-
-// Load config: from reorder-config.json (written by interpret-prompt step) or default
 import { existsSync, readFileSync, appendFileSync } from 'fs';
 
+// Load store-specific default config from STORE_CONFIG env var (path to JSON file)
+let storeData = {};
+const STORE_CONFIG_PATH = process.env.STORE_CONFIG;
+if (STORE_CONFIG_PATH) {
+  if (existsSync(STORE_CONFIG_PATH)) {
+    try {
+      storeData = JSON.parse(readFileSync(STORE_CONFIG_PATH, 'utf8'));
+    } catch {
+      console.warn(`Config store non valida: ${STORE_CONFIG_PATH} — uso valori di default vuoti`);
+    }
+  } else {
+    console.warn(`File STORE_CONFIG non trovato: ${STORE_CONFIG_PATH}`);
+  }
+}
+
+const DEFAULT_CONFIG = {
+  collections: storeData.collections ?? [],
+  groups: storeData.groups ?? [],
+  stockFirst: storeData.stockFirst ?? true,
+};
+const COLLECTION_NAMES = storeData.collectionNames ?? {};
+
+// Load config: from reorder-config.json (written by interpret-prompt step) or default
 let config = DEFAULT_CONFIG;
 if (existsSync('reorder-config.json')) {
   try {
@@ -38,6 +43,11 @@ if (existsSync('reorder-config.json')) {
   } catch {
     console.warn('Invalid reorder-config.json, using default.');
   }
+}
+
+if (config.collections.length === 0) {
+  console.error('Nessuna collection da riordinare. Imposta STORE_CONFIG con le collection di default o fornisci un prompt.');
+  process.exit(1);
 }
 
 // Extract unique metafield keys referenced across all groups

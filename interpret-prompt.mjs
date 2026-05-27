@@ -1,7 +1,12 @@
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN;
-const STORE = 'numero-ventuno.myshopify.com';
+const STORE = process.env.STORE;
 const prompt = process.env.PROMPT;
+
+if (!STORE) {
+  console.error('Errore: variabile d\'ambiente STORE non impostata (es. mio-store.myshopify.com)');
+  process.exit(1);
+}
 
 if (!prompt) {
   process.exit(0);
