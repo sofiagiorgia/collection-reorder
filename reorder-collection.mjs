@@ -78,6 +78,7 @@ async function fetchAllProducts(collectionId) {
                 totalInventory
                 metaCol: metafield(namespace: "custom", key: "collection") { value }
                 metaSeason: metafield(namespace: "custom", key: "season") { value }
+                metaGender: metafield(namespace: "custom", key: "gender") { value }
               }
             }
             pageInfo {
@@ -100,6 +101,7 @@ async function fetchAllProducts(collectionId) {
         stock: node.totalInventory ?? 0,
         collection: node.metaCol?.value?.trim().toLowerCase() ?? '',
         season: node.metaSeason?.value?.trim().toLowerCase() ?? '',
+        gender: node.metaGender?.value?.trim().toLowerCase() ?? '',
       });
     }
 
@@ -113,12 +115,15 @@ async function fetchAllProducts(collectionId) {
   return products;
 }
 
-function sortProducts(products, groups, stockFirst, pinnedProducts = []) {
+function sortProducts(products, groups, stockFirst, pinnedProducts = [], oosAtEnd = false) {
+  // Matches a product against a group: all keys in the group must match the product's field
   function getGroupIndex(p) {
     for (let i = 0; i < groups.length; i++) {
-      if (p.collection === groups[i].collection && p.season === groups[i].season) {
-        return i;
-      }
+      const g = groups[i];
+      const matches = Object.entries(g).every(([key, val]) =>
+        p[key] === (val?.trim().toLowerCase() ?? '')
+      );
+      if (matches) return i;
     }
     return groups.length;
   }
@@ -138,22 +143,32 @@ function sortProducts(products, groups, stockFirst, pinnedProducts = []) {
     }
   }
 
-  // Sort remaining by group + stock
-  remaining.sort((a, b) => {
-    const ga = getGroupIndex(a);
-    const gb = getGroupIndex(b);
-    if (ga !== gb) return ga - gb;
-    if (stockFirst) {
-      const sa = a.stock >= 1 ? 0 : 1;
-      const sb = b.stock >= 1 ? 0 : 1;
-      if (sa !== sb) return sa - sb;
-    }
-    return 0;
-  });
+  // Sort remaining: oosAtEnd pulls all OOS after all in-stock groups
+  let sorted;
+  if (oosAtEnd) {
+    const inStock = remaining.filter(p => p.stock >= 1);
+    const outOfStock = remaining.filter(p => p.stock < 1);
+    inStock.sort((a, b) => getGroupIndex(a) - getGroupIndex(b));
+    outOfStock.sort((a, b) => getGroupIndex(a) - getGroupIndex(b));
+    sorted = [...inStock, ...outOfStock];
+  } else {
+    sorted = [...remaining];
+    sorted.sort((a, b) => {
+      const ga = getGroupIndex(a);
+      const gb = getGroupIndex(b);
+      if (ga !== gb) return ga - gb;
+      if (stockFirst) {
+        const sa = a.stock >= 1 ? 0 : 1;
+        const sb = b.stock >= 1 ? 0 : 1;
+        if (sa !== sb) return sa - sb;
+      }
+      return 0;
+    });
+  }
 
   // Insert pinned products at their positions
   pinned.sort((a, b) => a.position - b.position);
-  const result = [...remaining];
+  const result = [...sorted];
   for (const { product, position } of pinned) {
     const pos = Math.min(position, result.length);
     result.splice(pos, 0, product);
@@ -193,7 +208,7 @@ async function reorderCollection(collectionId) {
   const products = await fetchAllProducts(collectionId);
   console.log(`Total: ${products.length}`);
 
-  const sorted = sortProducts(products, config.groups, config.stockFirst, config.pinnedProducts ?? []);
+  const sorted = sortProducts(products, config.groups, config.stockFirst, config.pinnedProducts ?? [], config.oosAtEnd ?? false);
 
   const BATCH = 250;
   for (let start = 0; start < sorted.length; start += BATCH) {

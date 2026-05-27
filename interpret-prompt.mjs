@@ -49,13 +49,14 @@ Sei un assistente che aiuta a gestire le collection Shopify del brand di moda N2
 Collection disponibili nel negozio:
 ${collections.map(c => `- "${c.title}" (handle: ${c.handle}, id: ${c.id})`).join('\n')}
 
-I prodotti hanno due metafield:
+I prodotti hanno i seguenti metafield (namespace "custom"):
 - "collection": valori noti: "capsule", "show", "resort", "main collection"
 - "season": valori noti: "fw26", "ss26", "fw25", "ss25" (fw=autunno/inverno, ss=primavera/estate, il numero è l'anno)
+- "gender": valori noti: "donna", "uomo", "unisex" (e varianti simili)
 
 L'utente descrive in linguaggio naturale:
 1. Su quali collection eseguire il riordino
-2. Quale ordine di priorità applicare ai gruppi (collection + season)
+2. Quale ordine di priorità applicare ai gruppi (puoi filtrare per uno o più metafield)
 3. Eventualmente, prodotti specifici da posizionare in una posizione precisa
 
 Rispondi SOLO con un oggetto JSON valido nel seguente formato, senza testo aggiuntivo:
@@ -65,17 +66,21 @@ Rispondi SOLO con un oggetto JSON valido nel seguente formato, senza testo aggiu
     { "title": "<parte del titolo>", "position": 0 }
   ],
   "groups": [
-    { "collection": "<valore_metafield>", "season": "<valore_metafield>" }
+    { "collection": "<valore_metafield>", "season": "<valore_metafield>" },
+    { "gender": "<valore_metafield>" }
   ],
-  "stockFirst": true
+  "stockFirst": true,
+  "oosAtEnd": false
 }
 
 Regole:
 - "collections": array degli ID delle collection da riordinare; se l'utente non specifica, usa tutte
 - "pinnedProducts": prodotti da bloccare in una posizione specifica (0 = primo). Ometti se non richiesto
-- "groups": array dei gruppi in ordine di priorità; i prodotti senza gruppo vanno in fondo
-- "stockFirst": true = prodotti con stock > 0 prima degli esauriti, all'interno di ogni gruppo
+- "groups": array dei gruppi in ordine di priorità; ogni gruppo può filtrare su qualsiasi combinazione di metafield (collection, season, gender, ecc.); tutti i campi specificati nel gruppo devono corrispondere; i prodotti senza gruppo vanno in fondo
+- "stockFirst": true = prodotti in stock prima degli esauriti, all'interno di ogni gruppo (ignorato se oosAtEnd è true)
+- "oosAtEnd": true = tutti i prodotti out-of-stock vengono messi alla fine di tutto, dopo tutti gli in-stock di ogni gruppo
 - Interpreta liberamente stagioni (es. "invernale 2026" = fw26, "primavera estate" = ss26)
+- Interpreta liberamente il gender (es. "Donna" = "donna", "femminile" = "donna")
 - Cerca il nome della collection anche per somiglianza (es. "accessori" = "Accessori donna")
 `;
 
