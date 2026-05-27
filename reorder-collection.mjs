@@ -50,9 +50,16 @@ function getGroupKeys(groups) {
 }
 
 const groupKeys = getGroupKeys(config.groups);
-const metafieldsFragment = groupKeys.length > 0
-  ? `metafields(identifiers: [${groupKeys.map(k => `{namespace: "custom", key: ${JSON.stringify(k)}}`).join(', ')}]) { key value }`
-  : '';
+
+// Build per-key alias entries: metafield(namespace:, key:) singular — metafields plural
+// does not support identifiers filtering in collection>products context (API 2024-01)
+const metafieldAliases = groupKeys.map(k => ({
+  key: k,
+  alias: 'mf_' + k.replace(/[^a-zA-Z0-9]/g, '_'),
+}));
+const metafieldsFragment = metafieldAliases
+  .map(({ key, alias }) => `${alias}: metafield(namespace: "custom", key: ${JSON.stringify(key)}) { value }`)
+  .join('\n                ');
 
 console.log('Config:', JSON.stringify(config, null, 2));
 
@@ -120,8 +127,8 @@ async function fetchAllProducts(collectionId) {
 
     for (const { node } of edges) {
       const meta = {};
-      for (const mf of (node.metafields ?? [])) {
-        meta[mf.key] = mf.value?.trim().toLowerCase() ?? '';
+      for (const { key, alias } of metafieldAliases) {
+        meta[key] = node[alias]?.value?.trim().toLowerCase() ?? '';
       }
       products.push({
         id: node.id,
