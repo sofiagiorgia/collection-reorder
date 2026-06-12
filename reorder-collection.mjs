@@ -114,6 +114,7 @@ async function fetchAllProducts(collectionId) {
                 id
                 title
                 totalInventory
+                tags
                 ${metafieldsFragment}
               }
             }
@@ -144,6 +145,7 @@ async function fetchAllProducts(collectionId) {
         id: node.id,
         title: node.title,
         stock: node.totalInventory ?? 0,
+        tags: (node.tags ?? []).map(t => t.toLowerCase()),
         ...meta,
       });
     }
@@ -187,7 +189,7 @@ function checkGroupCoverage(products, groups) {
   return rows;
 }
 
-function sortProducts(products, groups, stockFirst, pinnedProducts = [], oosAtEnd = false) {
+function sortProducts(products, groups, stockFirst, pinnedProducts = [], oosAtEnd = false, tagsLast = [], tagsFirst = []) {
   // Matches a product against a group: all keys in the group must match the product's field
   function getGroupIndex(p) {
     for (let i = 0; i < groups.length; i++) {
@@ -246,6 +248,15 @@ function sortProducts(products, groups, stockFirst, pinnedProducts = [], oosAtEn
     result.splice(pos, 0, product);
   }
 
+  if (tagsFirst.length > 0 || tagsLast.length > 0) {
+    const firstSet = new Set(tagsFirst.map(t => t.toLowerCase()));
+    const lastSet = new Set(tagsLast.map(t => t.toLowerCase()));
+    const first = result.filter(p => p.tags.some(t => firstSet.has(t)));
+    const last = result.filter(p => !p.tags.some(t => firstSet.has(t)) && p.tags.some(t => lastSet.has(t)));
+    const middle = result.filter(p => !p.tags.some(t => firstSet.has(t)) && !p.tags.some(t => lastSet.has(t)));
+    return [...first, ...middle, ...last];
+  }
+
   return result;
 }
 
@@ -288,7 +299,7 @@ async function reorderCollection(collectionId) {
   const coverageRows = checkGroupCoverage(products, config.groups);
   const hasWarning = coverageRows.some(r => r.warning);
 
-  const sorted = sortProducts(products, config.groups, config.stockFirst, config.pinnedProducts ?? [], config.oosAtEnd ?? false);
+  const sorted = sortProducts(products, config.groups, config.stockFirst, config.pinnedProducts ?? [], config.oosAtEnd ?? false, config.tagsLast ?? [], config.tagsFirst ?? []);
 
   const BATCH = 250;
   for (let start = 0; start < sorted.length; start += BATCH) {

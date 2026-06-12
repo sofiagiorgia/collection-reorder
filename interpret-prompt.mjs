@@ -110,6 +110,8 @@ Rispondi SOLO con un oggetto JSON valido nel seguente formato, senza testo aggiu
   "groups": [
     { "<chiave_metafield>": "<valore>", "<chiave_metafield2>": "<valore2>" }
   ],
+  "tagsFirst": ["<tag1>"],
+  "tagsLast": ["<tag2>"],
   "stockFirst": true,
   "oosAtEnd": false
 }
@@ -118,6 +120,8 @@ Regole:
 - "collections": array degli ID delle collection da riordinare; se l'utente non specifica, usa tutte
 - "pinnedProducts": prodotti da bloccare in una posizione specifica (0 = primo). Ometti se non richiesto
 - "groups": ogni elemento è un oggetto con una o più coppie chiave-valore metafield; un prodotto appartiene al gruppo se tutti i campi specificati corrispondono; i gruppi sono in ordine di priorità; i prodotti senza gruppo vanno in fondo
+- "tagsFirst": array di tag Shopify — prodotti con questi tag vengono portati all'inizio. Ometti se non richiesto
+- "tagsLast": array di tag Shopify — prodotti con questi tag vengono portati alla fine, dopo tutti gli altri. Ometti se non richiesto. I tag hanno la priorità sui gruppi metafield
 - "stockFirst": true = in-stock prima degli OOS, all'interno di ogni gruppo (ignorato se oosAtEnd è true)
 - "oosAtEnd": true = tutti i prodotti OOS finiscono dopo tutti gli in-stock, indipendentemente dal gruppo
 - Interpreta liberamente le stagioni (es. "invernale 2026" = "fw26", "primavera estate" = "ss26")
