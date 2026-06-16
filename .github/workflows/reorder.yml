@@ -1,8 +1,6 @@
 name: Reorder N21 Collections
 
 on:
-  schedule:
-    - cron: '0 6 * * *'  # 7:00 CET (UTC+1) / 8:00 CEST (UTC+2)
   workflow_dispatch:
     inputs:
       prompt:
